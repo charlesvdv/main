@@ -1,6 +1,11 @@
-from mesh import Mesh
+import math
 
-def build_map(removable=False):
+from mesh import Mesh
+from graphmap import GraphMap
+import networkx as nx
+import matplotlib.pyplot as plt
+
+def build_mesh(removable=False):
     m = Mesh((300, 200), 17)
 
     # Define the start area.
@@ -44,6 +49,37 @@ def build_map(removable=False):
 
     return m
 
+
+def distance_btw_points(p1, p2):
+    x = (p1[0] - p2[0])**2
+    y = (p1[1] - p2[1])**2
+    return math.sqrt(x + y)
+
+
+def convert_mesh_to_graph(mesh):
+    connections = mesh.get_connectivity_cells()
+    nodes = mesh.get_nodes()
+
+    graph = nx.Graph()
+    for i, n in enumerate(nodes):
+        graph.add_node(i, pos=n)
+
+    for conns in connections:
+        for i, c in enumerate(conns):
+            p1 = c
+            p2 = conns[(i+1) % 3]
+
+            weight = distance_btw_points(graph.node[p1]['pos'], graph.node[p2]['pos'])
+            graph.add_edge(p1, p2, weight=weight)
+    return graph
+
+
 if __name__ == '__main__':
-    m = build_map(removable=True)
-    m.display(accuracy=2)
+    m = build_mesh(removable=True)
+    m.build(cache=True)
+    #  print('Finish building the mesh')
+    #  #  m.display(accuracy=2)
+    #  graph = convert_mesh_to_graph(m)
+    #  print('Finish converting the mesh to graph')
+    #  nx.draw(graph, nx.get_node_attributes(graph, 'pos'))
+    graph = GraphMap(m.get_nodes(), m.get_connectivity_cells()).display()
