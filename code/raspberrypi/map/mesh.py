@@ -1,6 +1,8 @@
 import math
+import os.path
 
-from dolfin import Point, plot
+from dolfin import Point, plot, File
+from dolfin import Mesh as DolfinMesh
 import mshr
 
 
@@ -9,6 +11,7 @@ class Mesh():
         # Correct the map size by the robot_radius
         self.robot_radius = robot_radius
         self.dimension = list(map(lambda x: x - robot_radius, dimension))
+        self._cache_path = '/tmp/mesh.xml'
 
         # Define the base rectangle.
         self._map = mshr.Rectangle(
@@ -80,8 +83,22 @@ class Mesh():
         return Point(p.x() + self.robot_radius*inverse,
                      p.y() + self.robot_radius*inverse)
 
-    def build(self, accuracy=10):
+    def build(self, accuracy=10, cache=False):
+        if cache and os.path.exists(self._cache_path):
+            self._mesh2d = DolfinMesh(self._cache_path)
+            return
+
         self._mesh2d = mshr.generate_mesh(self._map, accuracy)
+
+        if cache:
+            f = File(self._cache_path)
+            f << self._mesh2d
+
+    def get_connectivity_cells(self):
+        return self._mesh2d.cells()
+
+    def get_nodes(self):
+        return self._mesh2d.coordinates()
 
     def display(self, accuracy=10):
         if self._mesh2d is None:
