@@ -6,10 +6,11 @@ import networkx as nx
 class GraphMap:
     def __init__(self, nodes, triangle_cells):
         self._graph = self.__build_graph(nodes, triangle_cells)
+        self.__merge_nodes(20, 300)
         self.__clean()
 
     def display(self):
-        nx.draw(self._graph, nx.get_node_attributes(self._graph, 'pos'))
+        nx.draw_networkx(self._graph, nx.get_node_attributes(self._graph, 'pos'))
         plt.show()
 
     def __distance_btw_points(self, p1, p2):
@@ -20,7 +21,7 @@ class GraphMap:
     def __build_graph(self, nodes, triangle_cells):
         graph = nx.Graph()
         for i, n in enumerate(nodes):
-            graph.add_node(i, pos=n)
+            graph.add_node(i, pos=n, color=0.0)
 
         for conns in triangle_cells:
             for i, c in enumerate(conns):
@@ -31,8 +32,19 @@ class GraphMap:
                 graph.add_edge(p1, p2, weight=weight)
         return graph
 
-    def __remove_node(p):
-        pass
+    def __merge_nodes(self, node, old_node):
+        self._graph.node[node]['color'] = 0.5
+        print(self._graph.node[node])
+        print(self._graph.node[old_node])
+        out_edge_node = self._graph.neighbors(node)
+        out_edge_old_node = self._graph.neighbors(old_node)
+
+        for edge in out_edge_old_node:
+            if edge not in out_edge_node:
+                self._graph.add_edge(node, edge)
+
+        self._graph.remove_node(node)
+        print(self._graph.node[old_node])
 
     def __mark_nodes_as_border(self):
         for node in self._graph.nodes():
