@@ -10,7 +10,9 @@ class GraphMap:
         self.__clean()
 
     def display(self):
-        nx.draw_networkx(self._graph, nx.get_node_attributes(self._graph, 'pos'))
+        print(nx.get_node_attributes(self._graph, 'color').values())
+        nx.draw_networkx(self._graph, nx.get_node_attributes(self._graph, 'pos'),
+                node_color=nx.get_node_attributes(self._graph, 'color').values())
         plt.show()
 
     def __distance_btw_points(self, p1, p2):
@@ -21,7 +23,7 @@ class GraphMap:
     def __build_graph(self, nodes, triangle_cells):
         graph = nx.Graph()
         for i, n in enumerate(nodes):
-            graph.add_node(i, pos=n, color=0.0)
+            graph.add_node(i, pos=n, color=(0.5, 0.5, 0.5))
 
         for conns in triangle_cells:
             for i, c in enumerate(conns):
@@ -33,7 +35,7 @@ class GraphMap:
         return graph
 
     def __merge_nodes(self, node, old_node):
-        self._graph.node[node]['color'] = 0.5
+        self._graph.node[node]['color'] = (0, 0, 0)
         print(self._graph.node[node])
         print(self._graph.node[old_node])
         out_edge_node = self._graph.neighbors(node)
