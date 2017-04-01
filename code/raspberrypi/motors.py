@@ -1,3 +1,5 @@
+import time
+
 from enum import IntEnum
 from i2c import I2C
 
@@ -18,6 +20,25 @@ class Command(IntEnum):
 class Motors(I2C):
     def __init__(self, address):
         super(Motors, self).__init__(address)
+
+    def set_path(self, path, callback):
+        for action in path:
+            val = action['value']
+            if action['action'] == 'move':
+                if val > 0:
+                    self.forward(val)
+                else:
+                    self.backward(val)
+            elif action['action'] == 'turn':
+                if val > 0:
+                    self.turn_right(val)
+                else:
+                    self.turn_left(val)
+
+            # Wait before action is done.
+            while not self.is_done():
+                time.sleep(0.1)
+                callback()
 
     def forward(self, distance):
         self.send([Command.Forward, distance])
