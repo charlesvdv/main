@@ -8,8 +8,8 @@ import networkx as nx
 class GraphMap:
     def __init__(self, nodes, triangles, cache=False):
         """
-        nodes represent the (x, y) address of nodes in the graph
-        triangles give the 3 positions in nodes array to form a triangle
+        nodes represent the (x, y) address of nodes in the graph.
+        triangles give the 3 positions in nodes array to form a triangle.
         """
         self._cache = cache
         self._cache_path = '/tmp/graphmap.data'
@@ -40,8 +40,6 @@ class GraphMap:
             node_pos = self._graph.node[node]['pos']
             dist_point = self.__distance_btw_points(point, node_pos)
             dist_dest = self.__distance_btw_points(direction, node_pos)
-            if dist_point == 0:
-                return node
             if dist_point < 30:
                 best_matches.append({'dist_point': dist_point,
                                      'dist_dest': dist_dest,
@@ -54,6 +52,9 @@ class GraphMap:
 
         start_node = self.get_neirest_node_pos(robot_pos['point'], target['point'])
         end_node = self.get_neirest_node_pos(target['point'], robot_pos['point'])
+
+        # TODO: remove edge added to the process before looking for the shortest path.
+        # This could give unvalid result.
         path = nx.shortest_path(self._graph, source=start_node, target=end_node, weight='weight')
 
         self._graph.add_node(START_NODE_ID, pos=robot_pos['point'], color='green')
@@ -66,14 +67,70 @@ class GraphMap:
                 self._graph.edge[path[i]][path[i+1]]['color'] = 'green'
 
         # Add dummy point to represent the node to begin the conversion.
-        path.insert(START_NODE_ID, 0)
+        path = [START_NODE_ID] + path
         path.append(END_NODE_ID)
-        self.__convert_nodelist_to_instruction(path, robot_pos, target)
-        print(self.__get_neighbors_angle(108))
+        return self.__convert_nodelist_to_instruction(path, robot_pos['angle'], target['angle'])
 
-    def __convert_nodelist_to_instruction(self, path, robot_pos, target):
-        pass
+    def __simplify_turn_angle(self, angle):
+        if abs(angle) > 180:
+            sign = 1 if angle > 0 else -1
+            angle = -sign*(360 - abs(angle))
+        return round(angle)
 
+    def __convert_nodelist_to_instruction(self, path, robot_angle, target_angle):
+        actions = []
+
+        start_angle_constrain = self.__get_node_angle(path[0], path[1])
+        actions.append({'action': 'turn', 'value': self.__simplify_turn_angle(start_angle_constrain - robot_angle)})
+
+        for i in range(len(path) - 2):
+            distance = self.__distance_btw_points(
+                    self._graph.node[path[i]]['pos'],
+                    self._graph.node[path[i+1]]['pos']
+            )
+            actions.append({'action': 'move', 'value': int(distance)})
+
+            # Get the opposite point to calculate the turn angle.
+            node_pos = self._graph.node[path[i]]['pos']
+            center_pos = self._graph.node[path[i+1]]['pos']
+            opposite_pos = (center_pos[0]+(center_pos[0]-node_pos[0]),
+                    center_pos[1] + (center_pos[1]-node_pos[1]))
+            angle1 = self.__get_pos_angle(self._graph.node[path[i+1]]['pos'], opposite_pos)
+            angle2 = self.__get_pos_angle(self._graph.node[path[i+1]]['pos'],
+                    self._graph.node[path[i+2]]['pos'])
+            turn_angle = self.__simplify_turn_angle(angle2 - angle1)
+            if turn_angle != 0:
+                actions.append({'action': 'turn', 'value': turn_angle})
+
+        # Finalize the last moving and turning.
+        distance = self.__distance_btw_points(
+            self._graph.node[path[-2]]['pos'],
+            self._graph.node[path[-1]]['pos']
+        )
+        actions.append({'action': 'move', 'value': int(distance)})
+
+        end_robot_angle = self.__get_node_angle(path[-1], path[-2])
+        actions.append({'action': 'turn', 'value': self.__simplify_turn_angle(end_robot_angle -
+            target_angle)})
+
+        return actions
+
+    def __clean_actions(self, actions):
+        cleaned_actions = []
+        for i in range(len(actions) - 2):
+            a1 = actions[i]
+            a2 = actions[i+1]
+            a3 = actions[i+2]
+
+            if a1['action'] == 'turn' and a3['action'] == 'turn':
+                if a1['value'] - a2['value'] < 10:
+                    # TODO: simplify!
+                    pass
+                else:
+                    cleaned_actions += [a1, a2, a3]
+            else if a1['action'] == a2['action'] && a1['action'] == 'move':
+                cleaned_actions.append({'action': 'move', 'value': a1['value'] + a2['value']})
+        return cleaned_actions
 
     def __read_cache(self):
         return nx.read_gpickle(self._cache_path)
@@ -112,7 +169,6 @@ class GraphMap:
         out_edge_node = self._graph.neighbors(node)
         out_edge_old_node = self._graph.neighbors(old_node)
 
-        # TODO: recalculate the weight
         for edge in out_edge_old_node:
             if edge not in out_edge_node:
                 weight = self.__distance_btw_points(
@@ -152,30 +208,43 @@ class GraphMap:
                 self._graph.node[node]['color'] = 'blue'
                 self._graph.node[node]['mesh_edge'] = True
 
+    def __get_pos_angle(self, center, node, upper=(0, 0)):
+        if upper == (0, 0):
+            upper = (2000, center[1])
+
+        a = self.__distance_btw_points(center, node)
+        b = self.__distance_btw_points(center, upper)
+        c = self.__distance_btw_points(node, upper)
+
+        # Law of cosine
+        cosinelaw = (a**2 + b**2 - c**2) / (2*a*b)
+        # Clamp the value between [-1; 1] because of inaccuracy in
+        # floating point numbers.
+        cosinelaw = max(min(cosinelaw, 1.0), -1.0)
+        angle = math.degrees(math.acos(cosinelaw))
+        # Check if we have passed the 180 degrees or not.
+        xpos1 = node[1] - center[1]
+        if xpos1 > 0:
+            angle = 360 - angle
+
+        return angle
+
+
+    def __get_node_angle(self, center, node):
+        """
+        The angle is the absolute angle relative to the X axis.
+        """
+        center_pos = self._graph.node[center]['pos']
+        point_pos = self._graph.node[node]['pos']
+        return self.__get_pos_angle(center_pos, point_pos)
+
+
     def __get_neighbors_angle(self, node_id):
         neighbors = self._graph.neighbors(node_id)
-        center_pos = self._graph.node[node_id]['pos']
-        upper_pos = (center_pos[0], 2000)
 
         data = []
         for i in neighbors:
-            n1 = self._graph.node[i]['pos']
-            a = self.__distance_btw_points(center_pos, n1)
-            b = self.__distance_btw_points(center_pos, upper_pos)
-            c = self.__distance_btw_points(n1, upper_pos)
-
-            # Law of cosine
-            cosinelaw = (a**2 + b**2 - c**2) / (2*a*b)
-            # Clamp the value between [-1; 1] because of inaccuracy in
-            # floating point numbers.
-            cosinelaw = max(min(cosinelaw, 1.0), -1.0)
-            angle = math.degrees(math.acos(cosinelaw))
-            # Check if we have passed the 180 degrees or not.
-            xpos1 = n1[0] - center_pos[0]
-            if xpos1 < 0:
-                angle = 360 - angle
-
-            data.append({'neighbor': i, 'angle': angle})
+            data.append({'neighbor': i, 'angle': self.__get_node_angle(node_id, i)})
 
         return data
 

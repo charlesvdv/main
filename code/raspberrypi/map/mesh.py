@@ -8,8 +8,8 @@ import mshr
 
 class Mesh():
     def __init__(self, dimension, robot_radius):
-        # Correct the map size by the robot_radius
         self.robot_radius = robot_radius
+        # Correct the map size by the robot_radius
         self.dimension = list(map(lambda x: x - robot_radius, dimension))
         self._cache_path = '/tmp/mesh.xml'
 

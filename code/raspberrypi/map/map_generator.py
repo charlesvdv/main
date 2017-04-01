@@ -57,5 +57,6 @@ if __name__ == '__main__':
     #  graph.display()
     graph = GraphMap(m.get_nodes(), m.get_connectivity_cells())
     graph.get_neirest_node_pos((56, 120), (200, 100))
-    graph.get_path({'point': (20, 40)}, {'point': (200, 150)}, display=True)
+    path = graph.get_path({'point': (20, 40), 'angle': 90}, {'point': (200, 150), 'angle': 180}, display=True)
+    print(path)
     graph.display()
