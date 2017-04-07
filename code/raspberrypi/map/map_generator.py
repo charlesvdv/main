@@ -39,7 +39,7 @@ def build_mesh(removable=False):
 
     # The removable lunar module.
     # The lunar module in the start is considered not here
-    # as we will obsiously take it.
+    # as we will obsiously take them.
     if removable:
         m.add_circle_obstacle((20, 60), 6.3, mirror=True)
         m.add_circle_obstacle((100, 60), 6.3, mirror=True)
@@ -57,6 +57,6 @@ if __name__ == '__main__':
     #  graph.display()
     graph = GraphMap(m.get_nodes(), m.get_connectivity_cells())
     graph.get_neirest_node_pos((56, 120), (200, 100))
-    path = graph.get_path({'point': (20, 40), 'angle': 90}, {'point': (200, 150), 'angle': 180}, display=True)
-    print(path)
+    path = graph.get_path({'point': (17, 18), 'angle': 0}, {'point': (274, 132), 'angle': 0}, display=True)
+    print(path, len(path))
     graph.display()

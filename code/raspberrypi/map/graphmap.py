@@ -20,37 +20,6 @@ class GraphMap:
         else:
             self.__build_graph_from_mesh(nodes, triangles)
 
-    def display(self):
-        """
-        Use matplotlib to display graph.
-        """
-        node_color = list(nx.get_node_attributes(self._graph, 'color').values())
-        edge_color = list(nx.get_edge_attributes(self._graph, 'color').values())
-        nx.draw_networkx(self._graph, nx.get_node_attributes(self._graph, 'pos'),
-                         node_size=20, with_labels=True, edge_color=edge_color,
-                         node_color=node_color)
-        plt.show()
-
-    def save(self):
-        nx.write_gpickle(self._graph, self._cache_path)
-
-    def get_neirest_node_pos(self, point, direction):
-        """
-        Get the neirest node position according to the direction.
-        """
-        best_matches = []
-        # Get the neirest points.
-        for node in self._graph.nodes():
-            node_pos = self._graph.node[node]['pos']
-            dist_point = self.__distance_btw_points(point, node_pos)
-            dist_dest = self.__distance_btw_points(direction, node_pos)
-            if dist_point < 30:
-                best_matches.append({'dist_point': dist_point,
-                                     'dist_dest': dist_dest,
-                                     'node': node})
-        # Get the point which is the closest to the direction we need to go to.
-        return sorted(best_matches, key=operator.itemgetter('dist_dest'))[0]['node']
-
     def get_path(self, robot_pos, target, display=False):
         # Give ID to the start node and end node.
         START_NODE_ID = 1000
@@ -61,8 +30,12 @@ class GraphMap:
         start_node = self.get_neirest_node_pos(robot_pos['point'], target['point'])
         end_node = self.get_neirest_node_pos(target['point'], robot_pos['point'])
 
-        # TODO: remove edge added to the process before looking for the shortest path.
+        # Remove edge added to the process before looking for the shortest path.
         # This could give unvalid result.
+        nodes = self._graph.nodes()
+        if START_NODE_ID in nodes and END_NODE_ID in nodes:
+            self._graph.remove_node(START_NODE_ID, END_NODE_ID)
+
         path = nx.shortest_path(self._graph, source=start_node, target=end_node, weight='weight')
 
         self._graph.add_node(START_NODE_ID, pos=robot_pos['point'], color='green')
@@ -79,6 +52,41 @@ class GraphMap:
         path.append(END_NODE_ID)
 
         return self.__convert_nodelist_to_instruction(path, robot_pos['angle'], target['angle'])
+
+    def display(self):
+        """
+        Use matplotlib to display graph.
+        """
+        node_color = list(nx.get_node_attributes(self._graph, 'color').values())
+        edge_color = list(nx.get_edge_attributes(self._graph, 'color').values())
+        nx.draw_networkx(self._graph, nx.get_node_attributes(self._graph, 'pos'),
+                         node_size=20, with_labels=True, edge_color=edge_color,
+                         node_color=node_color)
+        plt.show()
+
+    def save(self):
+        nx.write_gpickle(self._graph, self._cache_path)
+
+    def __read_cache(self):
+        return nx.read_gpickle(self._cache_path)
+
+    def get_neirest_node_pos(self, point, direction):
+        """
+        Get the neirest node position according to the direction.
+        Takes 2 nodes ID and return another one.
+        """
+        best_matches = []
+        # Get the neirest points.
+        for node in self._graph.nodes():
+            node_pos = self._graph.node[node]['pos']
+            dist_point = self.__distance_btw_points(point, node_pos)
+            dist_dest = self.__distance_btw_points(direction, node_pos)
+            if dist_point < 30:
+                best_matches.append({'dist_point': dist_point,
+                                     'dist_dest': dist_dest,
+                                     'node': node})
+        # Get the point which is the closest to the direction we need to go to.
+        return sorted(best_matches, key=operator.itemgetter('dist_dest'))[0]['node']
 
     def __simplify_turn_angle(self, angle):
         """
@@ -120,19 +128,40 @@ class GraphMap:
             if actions[-1]['action'] == 'move':
                 actions[-1]['value'] += distance
             else:
-                actions.append({'action': 'move', 'value': int(distance)})
+                actions.append({'action': 'move', 'value': round(distance)})
+
+            # Try to simplify the actions by removing actions making a triangle.
+            # A triangle means that the actions could be made by a straight line.
+            if (i > 2) and (actions[-2]['action'] == 'turn') and (abs(actions[-2]['value']) < 26):
+                    # Begin the simplication.
+                    # Calculate the new distance
+                    a = actions[-3]['value']
+                    b = actions[-1]['value']
+                    triange_angle = 180 - actions[-2]['value']
+                    new_distance = a**2 + b**2 - 2*a*b*math.cos(math.radians(triange_angle))
+                    actions[-1]['value'] = round(math.sqrt(new_distance))
+
+                    del actions[-3]
+
+                    # Correct the angle
+                    node_pos = self._graph.node[path[i-3]]['pos']
+                    center_pos = self._graph.node[path[i-2]]['pos']
+                    next_node_pos = self._graph.node[path[i]]['pos']
+
+                    turn_angle = self.__calculate_turn_angle(node_pos, center_pos, next_node_pos)
+                    if turn_angle != 0:
+                        if actions[-3]['action'] == 'turn':
+                            actions[-3]['value'] += turn_angle
+                            del actions[-2]
+                        else:
+                            actions[-2] = {'action': 'turn', 'value': turn_angle}
 
             # Add the turn actions.
             node_pos = self._graph.node[path[i]]['pos']
             center_pos = self._graph.node[path[i+1]]['pos']
-            # We need to take the opposite of the node_pos from the center to calculate the turn angle.
-            opposite_pos = (center_pos[0]+(center_pos[0]-node_pos[0]),
-                    center_pos[1] + (center_pos[1]-node_pos[1]))
-            # Calculate the 2 angles needed to get the turn angle.
-            angle1 = self.__get_pos_angle(self._graph.node[path[i+1]]['pos'], opposite_pos)
-            angle2 = self.__get_pos_angle(self._graph.node[path[i+1]]['pos'],
-                    self._graph.node[path[i+2]]['pos'])
-            turn_angle = self.__simplify_turn_angle(angle2 - angle1)
+            next_node_pos = self._graph.node[path[i+2]]['pos']
+
+            turn_angle = self.__calculate_turn_angle(node_pos, center_pos, next_node_pos)
             if turn_angle != 0:
                 actions.append({'action': 'turn', 'value': turn_angle})
 
@@ -144,13 +173,19 @@ class GraphMap:
         actions.append({'action': 'move', 'value': int(distance)})
 
         end_robot_angle = self.__get_node_angle(path[-1], path[-2])
-        actions.append({'action': 'turn', 'value': self.__simplify_turn_angle(end_robot_angle -
-            target_angle)})
+        actions.append({'action': 'turn', 'value':
+                        self.__simplify_turn_angle(end_robot_angle - target_angle)})
 
         return actions
 
-    def __read_cache(self):
-        return nx.read_gpickle(self._cache_path)
+    def __calculate_turn_angle(self, node, center, next_node):
+        opposite_pos = (center[0]+(center[0]-node[0]),
+                        center[1] + (center[1]-node[1]))
+        # Calculate the 2 angles needed to get the turn angle.
+        angle1 = self.__get_pos_angle(center, opposite_pos)
+        angle2 = self.__get_pos_angle(center, next_node)
+
+        return self.__simplify_turn_angle(angle2 - angle1)
 
     def __build_graph_from_mesh(self, nodes, triangle_cells):
         """
@@ -186,7 +221,6 @@ class GraphMap:
         x = (p1[0] - p2[0])**2
         y = (p1[1] - p2[1])**2
         return math.sqrt(x + y)
-
 
     def __clean(self):
         """
@@ -284,7 +318,6 @@ class GraphMap:
             angle = 360 - angle
 
         return angle
-
 
     def __get_node_angle(self, center, node):
         """
